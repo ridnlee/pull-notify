@@ -1,0 +1,43 @@
+syntax = "proto3";
+package proto;
+option go_package = "pull-notify/pkg/pb";
+
+service Notifyer {
+    rpc GetLastMsgs(GetLastMsgsRequest) returns (GetLastMsgsResponse) {}
+    rpc GetMsgList(GetMsgListRequest) returns (GetMsgListResponse) {}
+    rpc MarkRead(MarkReadRequest) returns (MarkReadResponse) {}
+}
+
+message GetLastMsgsRequest{
+    int64 client_id = 1;
+    int64 last_offset = 2;
+}
+
+message GetLastMsgsResponse{
+    repeated Msg msgs = 1;
+    int64 last_offset = 2;
+}
+
+message GetMsgListRequest{
+    int64 client_id = 1;
+}
+
+message GetMsgListResponse{
+    repeated Msg msgs = 1;
+}
+
+message MarkReadRequest{
+    int64 client_id = 1;
+    string msg_id = 2;
+    int64 offset = 3;
+}
+
+message MarkReadResponse{
+}
+
+message Msg{
+    string id = 1;
+    int64 created = 2;
+    string title = 3;
+    string body = 4;
+}
