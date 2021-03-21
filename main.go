@@ -1,51 +1,42 @@
 package main
 
 import (
-	"context"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
+	"fmt"
+	"log"
+	"net"
+	"pull-notify/internal/config"
+	"pull-notify/internal/input"
+	"pull-notify/internal/repo"
 
-	"github.com/caarlos0/env"
+	"pull-notify/pkg/pb"
+
+	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
 )
 
-type config struct {
-	Port        int           `env:"PORT" envDefault:"3000"`
-	LogLevel    string        `env:"LOG_LEVEL" envDefault:"debug"`
-	MsgTTL      time.Duration `env:"MSG_TTL" envDefault:"30d"`
-	FlushPeriod time.Duration `env:"FLUSH_PERIOD" envDefault:"1d"`
-}
-
 func main() {
-	cfg := getConfig()
+	cfg := config.GetConfig()
 	setLogger(cfg)
 	logrus.Infof("%+v\n", cfg)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	r := redis.NewClient(&redis.Options{
+		Addr: cfg.RedisAddr,
+		DB:   cfg.RedisDB,
+	})
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	select {
-	case <-sigs:
-		cancel()
-	case <-ctx.Done():
+	notifyStorage := repo.NewNotifyStorage(r)
+
+	grpcServer := grpc.NewServer([]grpc.ServerOption{}...)
+	pb.RegisterNotifyerServer(grpcServer, input.NewNotifyServer(notifyStorage, cfg))
+	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", cfg.Port))
+	if err != nil {
+		log.Panicf("failed to listen: %v", err)
 	}
-
+	grpcServer.Serve(lis)
 }
 
-func getConfig() *config {
-	cfg := &config{}
-
-	if err := env.Parse(cfg); err != nil {
-		panic(err)
-	}
-
-	return cfg
-}
-
-func setLogger(cfg *config) {
+func setLogger(cfg *config.Config) {
 	ll, err := logrus.ParseLevel(cfg.LogLevel)
 	if err != nil {
 		panic(err)
