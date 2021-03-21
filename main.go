@@ -25,7 +25,7 @@ func main() {
 		DB:   cfg.RedisDB,
 	})
 
-	notifyStorage := repo.NewNotifyStorage(r)
+	notifyStorage := repo.NewNotifyStorage(r, cfg)
 
 	grpcServer := grpc.NewServer([]grpc.ServerOption{}...)
 	pb.RegisterNotifyerServer(grpcServer, input.NewNotifyServer(notifyStorage, cfg))
