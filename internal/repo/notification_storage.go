@@ -62,6 +62,50 @@ func (st *NotifyStorage) GetMsgList(ctx context.Context, clientID int64) ([]*pb.
 }
 
 func (st *NotifyStorage) MarkRead(ctx context.Context, clientID int64, msgID string, offset int64) error {
+	listKey, err := st.checkAndGetListKey(ctx, clientID)
+	if err != nil {
+		return errors.Wrap(err, "cannot get list key")
+	}
+
+	msgs, err := st.r.ZRangeByScore(ctx, listKey, &redis.ZRangeBy{Min: fmt.Sprintf("%d", offset), Max: fmt.Sprintf("%d", offset)}).Result()
+	if err != nil {
+		return errors.Wrap(err, "cannot get msg")
+	}
+	msgsProto, err := msgsToProto(msgs)
+	if err != nil {
+		return errors.Wrap(err, "cannot unmarshal msgs")
+	}
+
+	zmsgs := make([]*redis.Z, 0, len(msgs))
+	for _, mp := range msgsProto {
+		if mp.Id == msgID {
+			mp.IsRead = true
+		}
+		mpMarshaled, err := proto.Marshal(mp)
+		if err != nil {
+			return errors.Wrap(err, "cannot marshal msg")
+		}
+		zmsgs = append(zmsgs, &redis.Z{Score: float64(offset), Member: mpMarshaled})
+	}
+
+	//probable race
+	_, err = st.r.TxPipelined(ctx, func(tx redis.Pipeliner) error {
+		_, err = tx.ZRemRangeByScore(ctx, listKey, fmt.Sprintf("%d", offset), fmt.Sprintf("%d", offset)).Result()
+		if err != nil {
+			return errors.Wrap(err, "cannot del lists")
+		}
+
+		_, err := tx.ZAddNX(ctx, listKey, zmsgs...).Result()
+		if err != nil {
+			return errors.Wrap(err, "cannot save an updated message")
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -169,5 +169,5 @@ var Notifyer_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/messages.proto",
+	Metadata: "api/messages.proto",
 }

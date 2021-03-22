@@ -40,4 +40,5 @@ message Msg{
     int64 created = 2;
     string title = 3;
     string body = 4;
+    bool is_read = 5;
 }
