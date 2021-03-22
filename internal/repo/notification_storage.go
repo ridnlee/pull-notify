@@ -86,31 +86,20 @@ func (st *NotifyStorage) checkAndGetListKey(ctx context.Context, clientID int64)
 		return curListKey, nil
 	}
 
-	offset := time.Now().Add(st.msgTTL * -1).Unix()
-	// since 6.2.0, there is ZRANGESTORE
-	msgs, err := st.r.ZRangeByScoreWithScores(ctx, prevListKey, &redis.ZRangeBy{Min: fmt.Sprintf("%d", offset)}).Result()
-	if err != nil {
-		return "", errors.Wrap(err, "cannot get msgs")
-	}
-
-	zmsgs := make([]*redis.Z, 0, len(msgs))
-	for _, msg := range msgs {
-		zmsgs = append(zmsgs, &msg)
-	}
-
+	minScore := time.Now().Add(st.msgTTL * -1).Unix()
 	_, err = st.r.TxPipelined(ctx, func(tx redis.Pipeliner) error {
-		_, err = tx.Del(ctx, curListKey, prevListKey).Result()
-		if err != nil {
-			return errors.Wrap(err, "cannot del lists")
-		}
-
-		_, err = tx.ZAdd(ctx, curListKey, zmsgs...).Result()
+		_, err = tx.Rename(ctx, prevListKey, curListKey).Result()
 		if err != nil {
 			return errors.Wrap(err, "cannot create a new list")
 		}
 		_, err = tx.Expire(ctx, curListKey, st.msgTTL).Result()
 		if err != nil {
 			return errors.Wrap(err, "cannot set expire for a list")
+		}
+
+		_, err = tx.ZRemRangeByScore(ctx, curListKey, fmt.Sprintf("%d", minScore), "").Result()
+		if err != nil {
+			return errors.Wrap(err, "cannot del lists")
 		}
 
 		_, err := tx.Set(ctx, listnameKey, curListKey, st.msgTTL).Result()
