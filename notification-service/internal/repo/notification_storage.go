@@ -88,7 +88,6 @@ func (st *NotifyStorage) MarkRead(ctx context.Context, clientID int64, msgID str
 		zmsgs = append(zmsgs, &redis.Z{Score: float64(offset), Member: mpMarshaled})
 	}
 
-	//probable race
 	_, err = st.r.TxPipelined(ctx, func(tx redis.Pipeliner) error {
 		_, err = tx.ZRemRangeByScore(ctx, listKey, fmt.Sprintf("%d", offset), fmt.Sprintf("%d", offset)).Result()
 		if err != nil {
@@ -104,6 +103,25 @@ func (st *NotifyStorage) MarkRead(ctx context.Context, clientID int64, msgID str
 
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (st *NotifyStorage) SaveMsg(ctx context.Context, msg *pb.Msg) error {
+	listKey, err := st.checkAndGetListKey(ctx, msg.ClientId)
+	if err != nil {
+		return errors.Wrap(err, "cannot get list key")
+	}
+
+	mpMarshaled, err := proto.Marshal(msg)
+	if err != nil {
+		return errors.Wrap(err, "cannot marshal msg")
+	}
+
+	_, err = st.r.ZAddNX(ctx, listKey, &redis.Z{Score: float64(msg.Created), Member: mpMarshaled}).Result()
+	if err != nil {
+		return errors.Wrap(err, "cannot save a message")
 	}
 
 	return nil

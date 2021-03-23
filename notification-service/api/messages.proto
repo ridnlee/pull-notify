@@ -37,8 +37,9 @@ message MarkReadResponse{
 
 message Msg{
     string id = 1;
-    int64 created = 2;
-    string title = 3;
-    string body = 4;
-    bool is_read = 5;
+    int64 client_id = 2;
+    int64 created = 3;
+    string title = 4;
+    string body = 5;
+    bool is_read = 6;
 }
