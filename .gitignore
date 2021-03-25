@@ -1,2 +1,4 @@
 .idea/
-pull-notify
+notification-service/notification-service
+notification-producer/notification-producer
+notification-client/notification-client

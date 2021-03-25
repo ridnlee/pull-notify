@@ -3,12 +3,13 @@ package repo
 import (
 	"context"
 	"fmt"
-	"pull-notify/internal/config"
-	"pull-notify/pkg/pb"
+	"notification-service/internal/config"
+	"notification-service/pkg/pb"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -28,29 +29,44 @@ func NewNotifyStorage(r *redis.Client, cfg *config.Config) *NotifyStorage {
 }
 
 func (st *NotifyStorage) GetLastMsgsByOffset(ctx context.Context, clientID int64, offset int64, lastMsgLimit int) ([]*pb.Msg, error) {
+	rangeMsgs := &redis.ZRangeBy{Min: fmt.Sprintf("(%d", offset), Max: "+Inf", Count: int64(lastMsgLimit)}
+
+	return st.getMsgs(ctx, clientID, rangeMsgs)
+}
+
+func (st *NotifyStorage) GetMsgList(ctx context.Context, clientID int64) ([]*pb.Msg, error) {
+	rangeMsgs := &redis.ZRangeBy{Max: "+Inf", Min: "-Inf"}
+
+	return st.getMsgs(ctx, clientID, rangeMsgs)
+}
+
+func (st *NotifyStorage) getMsgs(ctx context.Context, clientID int64, r *redis.ZRangeBy) ([]*pb.Msg, error) {
 	listKey := getListKey(clientID, getPeriodID(st.flushPeriod))
-	msgs, err := st.r.ZRevRangeByScore(ctx, listKey, &redis.ZRangeBy{Min: fmt.Sprintf("%d", offset), Count: int64(lastMsgLimit)}).Result()
+	var msgsCMD *redis.StringSliceCmd
+	var existsCMD *redis.IntCmd
+	_, err := st.r.TxPipelined(ctx, func(tx redis.Pipeliner) error {
+		existsCMD = tx.Exists(ctx, listKey)
+		msgsCMD = tx.ZRevRangeByScore(ctx, listKey, r)
+
+		return nil
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot get msgs")
 	}
 
-	protoMsgs, err := msgsToProto(msgs)
+	msgs, err := msgsCMD.Result()
 	if err != nil {
-		return nil, errors.Wrap(err, "cannot convert msgs to proto")
+		return nil, errors.Wrap(err, "cannot get msgs result")
 	}
-
-	return protoMsgs, nil
-}
-
-func (st *NotifyStorage) GetMsgList(ctx context.Context, clientID int64) ([]*pb.Msg, error) {
-	listKey, err := st.checkAndGetListKey(ctx, clientID)
-	if err != nil {
-		return nil, errors.Wrap(err, "cannot get list key")
-	}
-
-	msgs, err := st.r.ZRevRangeByScore(ctx, listKey, &redis.ZRangeBy{}).Result()
-	if err != nil {
-		return nil, err
+	if len(msgs) == 0 {
+		exists, err := existsCMD.Result()
+		if err != nil {
+			return nil, err
+		}
+		if exists == 0 {
+			st.refreshList(ctx, clientID)
+			return nil, nil
+		}
 	}
 
 	protoMsgs, err := msgsToProto(msgs)
@@ -62,15 +78,40 @@ func (st *NotifyStorage) GetMsgList(ctx context.Context, clientID int64) ([]*pb.
 }
 
 func (st *NotifyStorage) MarkRead(ctx context.Context, clientID int64, msgID string, offset int64) error {
-	listKey, err := st.checkAndGetListKey(ctx, clientID)
-	if err != nil {
-		return errors.Wrap(err, "cannot get list key")
+	listKey := getListKey(clientID, getPeriodID(st.flushPeriod))
+
+	var msgs []string
+	var err error
+	for ok := true; ok; ok = false {
+		var msgsCMD *redis.StringSliceCmd
+		var existsCMD *redis.IntCmd
+		_, err := st.r.TxPipelined(ctx, func(tx redis.Pipeliner) error {
+			existsCMD = tx.Exists(ctx, listKey)
+			msgsCMD = tx.ZRangeByScore(ctx, listKey, &redis.ZRangeBy{Min: fmt.Sprintf("%d", offset), Max: fmt.Sprintf("%d", offset)})
+
+			return nil
+		})
+		if err != nil {
+			return errors.Wrap(err, "cannot get msgs")
+		}
+
+		msgs, err := msgsCMD.Result()
+		if err != nil {
+			return errors.Wrap(err, "cannot get msgs result")
+		}
+		if len(msgs) == 0 {
+			exists, err := existsCMD.Result()
+			if err != nil {
+				return err
+			}
+			if exists == 0 {
+				ok = true
+				st.refreshList(ctx, clientID)
+				return nil
+			}
+		}
 	}
 
-	msgs, err := st.r.ZRangeByScore(ctx, listKey, &redis.ZRangeBy{Min: fmt.Sprintf("%d", offset), Max: fmt.Sprintf("%d", offset)}).Result()
-	if err != nil {
-		return errors.Wrap(err, "cannot get msg")
-	}
 	msgsProto, err := msgsToProto(msgs)
 	if err != nil {
 		return errors.Wrap(err, "cannot unmarshal msgs")
@@ -109,9 +150,14 @@ func (st *NotifyStorage) MarkRead(ctx context.Context, clientID int64, msgID str
 }
 
 func (st *NotifyStorage) SaveMsg(ctx context.Context, msg *pb.Msg) error {
-	listKey, err := st.checkAndGetListKey(ctx, msg.ClientId)
+	listKey := getListKey(msg.ClientId, getPeriodID(st.flushPeriod))
+	exists, err := st.r.Exists(ctx, listKey).Result()
 	if err != nil {
-		return errors.Wrap(err, "cannot get list key")
+		return errors.Wrap(err, "cannot check if a list exists")
+	}
+
+	if exists == 0 {
+		st.refreshList(ctx, msg.ClientId)
 	}
 
 	mpMarshaled, err := proto.Marshal(msg)
@@ -127,24 +173,21 @@ func (st *NotifyStorage) SaveMsg(ctx context.Context, msg *pb.Msg) error {
 	return nil
 }
 
-func (st *NotifyStorage) checkAndGetListKey(ctx context.Context, clientID int64) (string, error) {
-	curListKey := getListKey(clientID, getPeriodID(st.flushPeriod))
-	exists, err := st.r.Exists(ctx, curListKey).Result()
-	if err != nil {
-		return "", errors.Wrap(err, "cannot check if a list exists")
-	}
-
-	if exists != 0 {
-		return curListKey, nil
-	}
-
+func (st *NotifyStorage) refreshList(ctx context.Context, clientID int64) (string, error) {
 	listnameKey := getListnameKey(clientID)
+
 	prevListKey, err := st.r.Get(ctx, listnameKey).Result()
-	if err != nil {
+	if err != nil && err != redis.Nil {
 		return "", errors.Wrap(err, "cannot get previous list name")
 	}
 
+	curListKey := getListKey(clientID, getPeriodID(st.flushPeriod))
 	if prevListKey == "" {
+		_, err := st.r.Set(ctx, listnameKey, curListKey, st.msgTTL).Result()
+		if err != nil {
+			return "", errors.Wrap(err, "cannot save a new list name")
+		}
+		logrus.Debugf("list created %s", curListKey)
 		return curListKey, nil
 	}
 
@@ -159,7 +202,7 @@ func (st *NotifyStorage) checkAndGetListKey(ctx context.Context, clientID int64)
 			return errors.Wrap(err, "cannot set expire for a list")
 		}
 
-		_, err = tx.ZRemRangeByScore(ctx, curListKey, fmt.Sprintf("%d", minScore), "").Result()
+		_, err = tx.ZRemRangeByScore(ctx, curListKey, "", fmt.Sprintf("%d", minScore)).Result()
 		if err != nil {
 			return errors.Wrap(err, "cannot del lists")
 		}
@@ -174,6 +217,7 @@ func (st *NotifyStorage) checkAndGetListKey(ctx context.Context, clientID int64)
 	if err != nil {
 		return "", err
 	}
+	logrus.Debugf("list recreated %s->%s", prevListKey, curListKey)
 	return curListKey, nil
 }
 

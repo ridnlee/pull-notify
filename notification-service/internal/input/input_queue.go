@@ -2,7 +2,7 @@ package input
 
 import (
 	"context"
-	"pull-notify/pkg/pb"
+	"notification-service/pkg/pb"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"

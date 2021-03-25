@@ -1,6 +1,6 @@
 syntax = "proto3";
 package proto;
-option go_package = "pull-notify/pkg/pb";
+option go_package = "notification-service/pkg/pb";
 
 service Notifyer {
     rpc GetLastMsgs(GetLastMsgsRequest) returns (GetLastMsgsResponse) {}

@@ -2,8 +2,8 @@ package input
 
 import (
 	"context"
-	"pull-notify/internal/config"
-	"pull-notify/pkg/pb"
+	"notification-service/internal/config"
+	"notification-service/pkg/pb"
 	"time"
 )
 

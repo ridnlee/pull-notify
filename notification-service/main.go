@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"pull-notify/internal/config"
-	"pull-notify/internal/input"
-	"pull-notify/internal/repo"
+	"notification-service/internal/config"
+	"notification-service/internal/input"
+	"notification-service/internal/repo"
 	"sync"
 
-	"pull-notify/pkg/pb"
+	"notification-service/pkg/pb"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
