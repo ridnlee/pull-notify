@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"notification-service/pkg/pb"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"test-generator/pkg/pb"
 	"time"
 
 	"github.com/caarlos0/env"
@@ -20,7 +20,7 @@ import (
 
 type Config struct {
 	LogLevel  string `env:"LOG_LEVEL" envDefault:"debug"`
-	RedisAddr string `env:"REDIS_ADDR" envDefault:"localhost:6379"`
+	RedisAddr string `env:"REDIS_ADDR" envDefault:"redis:6379"`
 	RedisDB   int    `env:"REDIS_DB" envDefault:"0"`
 }
 

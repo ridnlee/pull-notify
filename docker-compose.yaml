@@ -11,7 +11,39 @@ services:
      - ALLOW_EMPTY_PASSWORD=yes
     networks:
       - code-network
-  app:  
+
+  notification-service:  
+    image: notification-service
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    depends_on:
+      - redis
+    restart: always
+    networks:
+      - code-network
+
+  test-generator:  
+    image: test-generator
+    build:
+      context: ./test-generator
+      dockerfile: Dockerfile
+    depends_on:
+      - redis
+    restart: always
+    networks:
+      - code-network
+
+  test-client:  
+    image: test-client
+    build:
+      context: ./test-client
+      dockerfile: Dockerfile
+    depends_on:
+      - notification-service
+    restart: always
+    networks:
+      - code-network
 
 networks:
   code-network:

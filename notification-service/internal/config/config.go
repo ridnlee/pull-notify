@@ -13,7 +13,7 @@ type Config struct {
 	FlushPeriod   time.Duration `env:"FLUSH_PERIOD" envDefault:"1m"`
 	LastMsgPeriod time.Duration `env:"LAST_MSG_PERIOD" envDefault:"1m"`
 	LastMsgLimit  int           `env:"LAST_MSG_LIMIT" envDefault:"3"`
-	RedisAddr     string        `env:"REDIS_ADDR" envDefault:"localhost:6379"`
+	RedisAddr     string        `env:"REDIS_ADDR" envDefault:"redis:6379"`
 	RedisDB       int           `env:"REDIS_DB" envDefault:"0"`
 }
 

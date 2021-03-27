@@ -1,4 +1,4 @@
 .idea/
 notification-service/notification-service
-notification-producer/notification-producer
-notification-client/notification-client
+test-generator/test-generator
+test-client/test-client

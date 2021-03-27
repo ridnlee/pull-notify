@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
-	"notification-service/pkg/pb"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"test-client/pkg/pb"
 	"time"
 
 	"github.com/caarlos0/env"
@@ -17,7 +17,8 @@ import (
 )
 
 type Config struct {
-	LogLevel string `env:"LOG_LEVEL" envDefault:"debug"`
+	LogLevel            string `env:"LOG_LEVEL" envDefault:"debug"`
+	NotificationService string `env:"NOTIFICATION_SERVICE" envDefault:"notification-service:3000"`
 }
 
 func main() {
@@ -28,7 +29,7 @@ func main() {
 	opts := []grpc.DialOption{
 		grpc.WithInsecure(),
 	}
-	conn, err := grpc.Dial("127.0.0.1:3000", opts...)
+	conn, err := grpc.Dial(cfg.NotificationService, opts...)
 
 	if err != nil {
 		grpclog.Fatalf("fail to dial: %v", err)
@@ -45,7 +46,7 @@ func main() {
 		defer wg.Done()
 		err := run(ctx, client)
 		if err != nil {
-			logrus.Error(err)
+			logrus.Panic(err)
 		}
 		cancel()
 	}()

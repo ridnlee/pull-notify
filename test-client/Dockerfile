@@ -6,4 +6,4 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build .
 
-CMD ["./notification-service"]
+CMD ["./test-client"]
